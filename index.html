@@ -1462,7 +1462,7 @@
      🚀 Vue3 アプリ本体
      ===================================================== -->
   <script type="module">
-    import { createApp, ref, reactive, onMounted, computed } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
+    import { createApp, ref, reactive, onMounted, computed, nextTick } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
 
     createApp({
       setup() {
@@ -1596,6 +1596,45 @@
           return css;
         }
 
+
+        // =====================================================
+        // ⏱ 状態制御関数（コマ撮りエクスポート用）
+        // =====================================================
+        function renderStateAtTime(t) {
+          let elapsed = TIMING.initialDelay;
+          visibleCount.value = 0;
+          
+          for (let i = 0; i < scenario.value.length; i++) {
+            const msg = scenario.value[i];
+            const charCount = Array.from(msg.text || '').length;
+            const msgDuration = TIMING.iconAppear + TIMING.bubbleAppear + (charCount * TIMING.charDelay) + TIMING.afterText;
+            
+            if (t < elapsed) {
+              msg.displayText = '';
+              msg.currentEmotion = '';
+              continue;
+            }
+            
+            visibleCount.value = i + 1;
+            const msgT = t - elapsed;
+            
+            if (msgT < TIMING.iconAppear + TIMING.bubbleAppear) {
+              msg.displayText = '';
+              msg.currentEmotion = msg.emotion;
+            } else {
+              const textT = msgT - (TIMING.iconAppear + TIMING.bubbleAppear);
+              const charsToShow = Math.floor(textT / TIMING.charDelay);
+              if (charsToShow < charCount) {
+                msg.displayText = Array.from(msg.text || '').slice(0, charsToShow).join('');
+                msg.currentEmotion = msg.emotion;
+              } else {
+                msg.displayText = msg.text;
+                msg.currentEmotion = '';
+              }
+            }
+            elapsed += msgDuration;
+          }
+        }
 
         // =====================================================
         // 🎬 アニメ再生関数
@@ -1827,11 +1866,12 @@
             repeat: -1
           });
 
-          const animationPromise = play();
-
           progressText.value = 'アニメを録画中...';
           for (let t = 0; t < totalMs; t += frameDelay) {
             try {
+              renderStateAtTime(t);
+              await nextTick();
+
               // 📸 DOM→Canvas（html-to-image版・taintedされない）
               const canvas = await htmlToImage.toCanvas(stageEl, {
                 backgroundColor: '#F5F2E4',
@@ -1855,10 +1895,9 @@
             } catch (e) {
               console.warn('フレームキャプチャ失敗', e);
             }
-            await wait(frameDelay);
+            // 息継ぎ（UI更新用）
+            await new Promise(r => requestAnimationFrame(r));
           }
-
-          await animationPromise;
 
           progressText.value = 'GIFを書き出し中...';
           return new Promise((resolve, reject) => {
@@ -1935,11 +1974,13 @@
 
           const frames = [];
           const delays = [];
-          const animationPromise = play();
 
           progressText.value = 'アニメを録画中...';
           for (let t = 0; t < totalMs; t += frameDelay) {
             try {
+              renderStateAtTime(t);
+              await nextTick();
+
               // 📸 DOM→Canvas（html-to-image版・座標計算なし、taintedされない）
               //   width/height/canvasWidth/canvasHeight 全部指定でサイズ揺らぎ防止
               const canvas = await htmlToImage.toCanvas(stageEl, {
@@ -1975,10 +2016,9 @@
             } catch (e) {
               console.warn('フレームキャプチャ失敗', e);
             }
-            await wait(frameDelay);
+            // 息継ぎ（UI更新用）
+            await new Promise(r => requestAnimationFrame(r));
           }
-
-          await animationPromise;
 
           if (frames.length === 0) {
             throw new Error('フレームが1つも取得できませんでした');
