@@ -3,17 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>検証6: html-to-image + UPNG.js（APNG）</title>
+<title>検証5: html-to-image + gif.js（直接GIF）</title>
 
-<!-- 🌟 重要：pako は UPNG.js より先に読み込む！ -->
-<!-- pako: window.pako に展開される正しいUMD版 -->
-<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
-
-<!-- UPNG.js: pako をグローバルに見つけるバージョン -->
-<script src="https://cdn.jsdelivr.net/gh/photopea/UPNG.js/UPNG.js"></script>
-
-<!-- 🌟 html-to-image -->
+<!-- 🌟 ライブラリ -->
 <script src="https://unpkg.com/html-to-image/dist/html-to-image.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
 
 <style>
 :root {
@@ -35,6 +29,7 @@ body {
 
 h1 { font-size: 18px; margin: 0 0 12px; }
 
+/* チャットステージ */
 .stage {
   background: var(--f);
   border-radius: 14px;
@@ -135,11 +130,6 @@ h1 { font-size: 18px; margin: 0 0 12px; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn:hover:not(:disabled) { background: #4a8d88; }
 
-.btn-check {
-  background: var(--d);
-}
-.btn-check:hover:not(:disabled) { background: #5a5d23; }
-
 #status {
   margin-top: 8px;
   padding: 8px;
@@ -149,7 +139,7 @@ h1 { font-size: 18px; margin: 0 0 12px; }
   font-size: 13px;
   white-space: pre-wrap;
   min-height: 100px;
-  max-height: 350px;
+  max-height: 300px;
   overflow-y: auto;
 }
 
@@ -172,21 +162,20 @@ h1 { font-size: 18px; margin: 0 0 12px; }
 
 <body>
 
-<h1>🧪 検証6: html-to-image + UPNG.js（APNG）</h1>
+<h1>🧪 検証5: html-to-image + gif.js（直接GIF）</h1>
 
 <!-- チャットステージ -->
 <div class="stage" id="stage"></div>
 
 <!-- 操作 -->
 <div class="panel">
-  <button class="btn btn-check" id="btn-check">🔍 ライブラリ確認</button>
-  <button class="btn" id="btn-apng">🌈 APNG生成</button>
-  <div id="status">ライブラリ確認 → APNG生成の順で押してください</div>
+  <button class="btn" id="btn-gif">🎬 GIF生成（録画→直接変換）</button>
+  <div id="status">準備OK。ボタンを押すと GIF が生成されます。</div>
 </div>
 
 <!-- 結果 -->
 <div class="panel" id="result-panel" style="display:none;">
-  <strong>🎨 生成されたAPNG：</strong>
+  <strong>🎨 生成されたGIF：</strong>
   <img id="result-img" class="result-img">
   <div id="result-info" class="file-info"></div>
 </div>
@@ -194,7 +183,7 @@ h1 { font-size: 18px; margin: 0 0 12px; }
 
 <script>
 // ============================================================
-// 📦 シナリオデータ
+// 📦 シナリオデータ（ChatAniMaker準拠）
 // ============================================================
 const CHARACTERS = {
   qororie: {
@@ -267,49 +256,6 @@ function downloadBlob(blob, filename) {
 }
 
 // ============================================================
-// 🔍 ライブラリ存在確認（pakoとUPNGの罠を最初に潰す）
-// ============================================================
-function checkLibraries() {
-  clearLog();
-  log('🔍 ライブラリ確認');
-
-  log('1. pako:');
-  if (typeof pako === 'undefined') {
-    log('   ❌ pako が未定義（読み込み失敗）');
-    return false;
-  }
-  log(`   ✅ pako 読み込みOK (version: ${pako.version || '不明'})`);
-  log(`   ・pako.deflate: ${typeof pako.deflate}`);
-  log(`   ・pako.inflate: ${typeof pako.inflate}`);
-
-  log('2. UPNG:');
-  if (typeof UPNG === 'undefined') {
-    log('   ❌ UPNG が未定義');
-    return false;
-  }
-  log(`   ✅ UPNG 読み込みOK`);
-  log(`   ・UPNG.encode: ${typeof UPNG.encode}`);
-
-  log('3. html-to-image:');
-  if (typeof htmlToImage === 'undefined') {
-    log('   ❌ html-to-image が未定義');
-    return false;
-  }
-  log(`   ✅ html-to-image OK`);
-
-  log('4. UPNG が pako を見つけられるか:');
-  // UPNG.js は内部で window.pako または グローバル pako を参照
-  if (window.pako || typeof pako !== 'undefined') {
-    log('   ✅ pako はグローバルから参照可能');
-  } else {
-    log('   ⚠️ pako のグローバル参照が怪しい');
-  }
-
-  log('✅ 全ライブラリチェック完了');
-  return true;
-}
-
-// ============================================================
 // 🎬 チャット描画
 // ============================================================
 const stage = $('stage');
@@ -372,6 +318,7 @@ function setFinalState() {
   });
 }
 
+// アニメ再生（async版）
 async function playAnime() {
   stage.innerHTML = '';
   const elements = SCENARIO.map(buildMessageEl);
@@ -396,76 +343,81 @@ async function playAnime() {
 }
 
 // ============================================================
-// 🌈 APNG生成（メイン）
+// 🌐 gif.worker.js を Blob URL として取得（file:// 対策）
 // ============================================================
-async function generateApng() {
+let _cachedWorkerUrl = null;
+async function fetchWorkerAsBlob() {
+  if (_cachedWorkerUrl) return _cachedWorkerUrl;
+  const WORKER_URL = 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js';
+  const response = await fetch(WORKER_URL);
+  if (!response.ok) throw new Error('gif.worker.js取得失敗');
+  const code = await response.text();
+  const blob = new Blob([code], { type: 'application/javascript' });
+  _cachedWorkerUrl = URL.createObjectURL(blob);
+  return _cachedWorkerUrl;
+}
+
+// ============================================================
+// 🎬 GIF生成（メイン）
+// ============================================================
+async function generateGif() {
   clearLog();
-  log('🚀 APNG生成開始');
-  $('btn-apng').disabled = true;
+  log('🚀 GIF生成開始');
+  $('btn-gif').disabled = true;
   $('result-panel').style.display = 'none';
 
-  // ライブラリ確認
-  if (!checkLibraries()) {
-    $('btn-apng').disabled = false;
-    return;
-  }
-
   try {
-    // 1. ステージサイズを最初に確定（前回のRangeError対策！）
+    // ステージサイズ取得（最終状態で）
     setFinalState();
     await wait(50);
     const rect = stage.getBoundingClientRect();
-    const FIXED_WIDTH = Math.ceil(rect.width);
-    const FIXED_HEIGHT = Math.ceil(rect.height);
-    log(`固定サイズ: ${FIXED_WIDTH}×${FIXED_HEIGHT}`);
-    log('  → 全フレームこのサイズに統一します（重要！）');
+    const width = Math.ceil(rect.width);
+    const height = Math.ceil(rect.height);
+    log(`ステージサイズ: ${width}×${height}`);
 
-    // 2. ステージクリアしてアニメ開始
-    stage.innerHTML = '';
+    // gif.worker準備
+    log('gif.worker.js 取得中...');
+    const workerUrl = await fetchWorkerAsBlob();
+    log('  ✅ worker準備OK');
+
+    // GIF初期化
+    log('gif.js 初期化');
+    const gif = new GIF({
+      workers: 2,
+      quality: 10,
+      width,
+      height,
+      workerScript: workerUrl,
+      repeat: -1
+    });
+
     const frameDelay = Math.round(1000 / FPS);
     log(`frameDelay: ${frameDelay}ms (${FPS}fps)`);
 
-    // フレームバッファ（ピクセルデータ ArrayBuffer の配列）
-    const frames = [];
-    const delays = [];
+    // ステージクリアして再生開始
+    stage.innerHTML = '';
     let frameCount = 0;
     let renderingActive = true;
 
-    // 録画ループ：固定サイズでCanvas取得 → ImageData取得
+    // フレーム取得ループ
     const renderLoop = async () => {
       while (renderingActive) {
         try {
-          // 🎯 重要：width/height を明示指定してサイズ統一
+          // html-to-image で Canvas取得
           const canvas = await htmlToImage.toCanvas(stage, {
             backgroundColor: '#F5F2E4',
             pixelRatio: 1,
-            width: FIXED_WIDTH,
-            height: FIXED_HEIGHT,
-            canvasWidth: FIXED_WIDTH,
-            canvasHeight: FIXED_HEIGHT
+            width,
+            height
           });
-
-          // 🎯 安全策：取得したCanvasのサイズが想定と違ったらスキップ
-          if (canvas.width !== FIXED_WIDTH || canvas.height !== FIXED_HEIGHT) {
-            log(`  ⚠️ サイズ不一致でスキップ: ${canvas.width}×${canvas.height}`);
-            await wait(frameDelay);
-            continue;
-          }
-
-          // ImageData取得
-          const ctx = canvas.getContext('2d');
-          const imgData = ctx.getImageData(0, 0, FIXED_WIDTH, FIXED_HEIGHT);
-
-          // ArrayBuffer に変換して保存（UPNG.encodeに渡せる形式）
-          frames.push(imgData.data.buffer);
-          delays.push(frameDelay);
+          gif.addFrame(canvas, { delay: frameDelay, copy: true });
           frameCount++;
 
           if (frameCount % 5 === 0) {
             log(`  録画中... ${frameCount}フレーム`);
           }
         } catch (e) {
-          log(`  ⚠️ フレーム生成エラー: ${e.message}`);
+          // フレーム生成失敗は無視
         }
         await wait(frameDelay);
       }
@@ -479,59 +431,50 @@ async function generateApng() {
     await animPromise;
     log('アニメ再生完了');
 
-    await wait(500);
+    await wait(500); // 余韻
     renderingActive = false;
     await wait(100);
 
     log(`総フレーム数: ${frameCount}`);
-    log(`配列長: frames=${frames.length}, delays=${delays.length}`);
 
-    if (frames.length === 0) {
-      throw new Error('フレームが1つも取得できませんでした');
-    }
+    // GIFエンコード
+    log('GIFエンコード中...');
+    const blob = await new Promise((resolve, reject) => {
+      gif.on('progress', (p) => {
+        log(`  エンコード: ${(p * 100).toFixed(0)}%`);
+      });
+      gif.on('finished', resolve);
+      gif.on('abort', () => reject(new Error('生成中断')));
+      gif.render();
+    });
 
-    // 3. UPNG.encode でAPNG生成
-    log('UPNG.encode 実行...');
-    log(`  width=${FIXED_WIDTH}, height=${FIXED_HEIGHT}, frames=${frames.length}`);
+    log(`✅ GIF生成成功: ${(blob.size / 1024).toFixed(1)} KB`);
 
-    // UPNG.encode(buffers, w, h, cnum, dels)
-    //   buffers: ImageData の ArrayBuffer 配列
-    //   w, h: サイズ
-    //   cnum: 0 = フルカラー、256 = 256色パレット
-    //   dels: 各フレームの delay (ms)
-    const apngBuffer = UPNG.encode(frames, FIXED_WIDTH, FIXED_HEIGHT, 0, delays);
-
-    log(`✅ APNG生成成功: ${(apngBuffer.byteLength / 1024).toFixed(1)} KB`);
-
-    const blob = new Blob([apngBuffer], { type: 'image/apng' });
-    downloadBlob(blob, 'test-apng.png');
-    log('   → test-apng.png ダウンロード完了');
+    downloadBlob(blob, 'test-gif.gif');
+    log('   → test-gif.gif ダウンロード完了');
 
     // プレビュー
     const url = URL.createObjectURL(blob);
     $('result-img').src = url;
     $('result-info').textContent =
-      `サイズ: ${FIXED_WIDTH}×${FIXED_HEIGHT}, ${(blob.size / 1024).toFixed(1)} KB, ${frameCount}フレーム`;
+      `サイズ: ${width}×${height}, ${(blob.size / 1024).toFixed(1)} KB, ${frameCount}フレーム`;
     $('result-panel').style.display = 'block';
 
   } catch (err) {
     log('❌ 失敗: ' + err.message);
-    log('  スタック: ' + (err.stack || '(なし)').split('\n').slice(0, 3).join('\n  '));
     console.error(err);
   } finally {
-    $('btn-apng').disabled = false;
+    $('btn-gif').disabled = false;
   }
 }
 
 // ============================================================
 // イベント
 // ============================================================
-$('btn-check').onclick = checkLibraries;
-$('btn-apng').onclick = generateApng;
+$('btn-gif').onclick = generateGif;
 
 // 初期表示
 setFinalState();
-log('準備OK。「🔍 ライブラリ確認」 から始めてください');
 </script>
 </body>
 </html>
