@@ -1189,7 +1189,10 @@
             <div class="message-icon" :class="[
                 'emotion-' + msg.currentEmotion,
                 'face-' + characters[msg.speaker].facing
-                ]" :style="{ background: characters[msg.speaker].color }">
+                ]" :style="[
+                  { background: characters[msg.speaker].color },
+                  isExporting ? msg.exportStyle : {}
+                ]">
               {{ characters[msg.speaker].iconLabel }}
             </div>
 
@@ -1476,6 +1479,7 @@
         const isPlaying = ref(false);
         const visibleCount = ref(0);
         const activeTab = ref('anime');
+        const isExporting = ref(false); // コマ撮り録画中フラグ
 
         // ダウンロードメニュー
         const showDownloadMenu = ref(false);
@@ -1609,6 +1613,8 @@
             const charCount = Array.from(msg.text || '').length;
             const msgDuration = TIMING.iconAppear + TIMING.bubbleAppear + (charCount * TIMING.charDelay) + TIMING.afterText;
             
+            msg.exportStyle = {};
+
             if (t < elapsed) {
               msg.displayText = '';
               msg.currentEmotion = '';
@@ -1618,6 +1624,17 @@
             visibleCount.value = i + 1;
             const msgT = t - elapsed;
             
+            // --- CSSアニメの「だるまさんがころんだ」制御 ---
+            if (msgT >= TIMING.iconAppear) {
+              // アイコンが登場してからの経過時間（秒）
+              const iconElapsedSec = ((msgT - TIMING.iconAppear) / 1000).toFixed(3);
+              msg.exportStyle = {
+                animationDelay: `-${iconElapsedSec}s`,
+                animationPlayState: 'paused'
+              };
+            }
+            // -----------------------------------------------
+
             if (msgT < TIMING.iconAppear + TIMING.bubbleAppear) {
               msg.displayText = '';
               msg.currentEmotion = msg.emotion;
@@ -1785,6 +1802,7 @@
             alert('セリフが1つもありません');
             return false;
           }
+          isExporting.value = true;
           activeTab.value = 'anime';
           showProgress.value = true;
           progressTitle.value = title;
@@ -1841,6 +1859,7 @@
             console.error(err);
           } finally {
             showProgress.value = false;
+            isExporting.value = false;
           }
         }
 
@@ -1880,7 +1899,7 @@
                 height: height,
                 style: {
                   transform: `scale(${scale})`,
-                  transformOrigin: 'top left',
+                  'transform-origin': 'top left',
                   width: stageEl.offsetWidth + 'px',
                   height: stageEl.offsetHeight + 'px',
                   margin: '0'
@@ -1949,6 +1968,7 @@
             console.error(err);
           } finally {
             showProgress.value = false;
+            isExporting.value = false;
           }
         }
 
@@ -1990,7 +2010,7 @@
                 height: FIXED_HEIGHT,
                 style: {
                   transform: `scale(${scale})`,
-                  transformOrigin: 'top left',
+                  'transform-origin': 'top left',
                   width: STAGE_REAL_WIDTH + 'px',
                   height: STAGE_REAL_HEIGHT + 'px',
                   margin: '0'
