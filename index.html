@@ -5,13 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ChatAniMaker - チャットアニメ作成ツール</title>
 
-<!-- 🎬 GIF生成 -->
+<!-- 🎬 GIF生成（Canvas配列をGIFアニメに） -->
 <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
-<!-- 📸 DOMキャプチャ -->
-<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<!-- 🌈 APNG生成（pako同梱版） -->
+
+<!-- 📸 DOM→Canvas変換（座標計算なしで画像化、taintedされない） -->
+<script src="https://unpkg.com/html-to-image/dist/html-to-image.js"></script>
+
+<!-- 🗜 zlib圧縮（paco | UPNG.jsが内部で必須・必ずUPNGより先に読み込む！） -->
+<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+
+<!-- 🌈 APNG生成（pakoが先に読み込まれてる必要あり） -->
 <script src="https://cdn.jsdelivr.net/gh/photopea/UPNG.js/UPNG.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/pako@1.0.11/dist/pako.min.js"></script>
 
 <style>
 /* =====================================================
@@ -1444,7 +1448,6 @@ body {
       </div>
     </div>
 
-
 </div><!-- /#app -->
 
 
@@ -1794,8 +1797,8 @@ body {
         if (typeof GIF === 'undefined') {
           alert('GIFライブラリの読み込みに失敗しました'); return;
         }
-        if (typeof html2canvas === 'undefined') {
-          alert('html2canvasライブラリの読み込みに失敗しました'); return;
+        if (typeof htmlToImage === 'undefined') {
+          alert('html-to-imageライブラリの読み込みに失敗しました'); return;
         }
         if (!await prepareExport('🎬 GIF生成中...')) return;
 
@@ -1831,10 +1834,10 @@ body {
         progressText.value = 'アニメを録画中...';
         for (let t = 0; t < totalMs; t += frameDelay) {
           try {
-            const canvas = await html2canvas(stageEl, {
-              backgroundColor: null,
-              scale,
-              logging: false,
+            // 📸 DOM→Canvas（html-to-image版・taintedされない）
+            const canvas = await htmlToImage.toCanvas(stageEl, {
+              backgroundColor: '#F5F2E4',
+              pixelRatio: scale,
               width: stageEl.getBoundingClientRect().width,
               height: stageEl.getBoundingClientRect().height
             });
@@ -1882,11 +1885,15 @@ body {
       // =====================================================
 
       async function downloadApng() {
+        // 📦 ライブラリ存在確認（pakoはUPNGの依存・必須）
+        if (typeof pako === 'undefined') {
+          alert('pakoライブラリの読み込みに失敗しました（UPNG.jsの依存）'); return;
+        }
         if (typeof UPNG === 'undefined') {
           alert('UPNG.jsライブラリの読み込みに失敗しました'); return;
         }
-        if (typeof html2canvas === 'undefined') {
-          alert('html2canvasライブラリの読み込みに失敗しました'); return;
+        if (typeof htmlToImage === 'undefined') {
+          alert('html-to-imageライブラリの読み込みに失敗しました'); return;
         }
         if (!await prepareExport('🌈 APNG生成中...')) return;
 
@@ -1907,6 +1914,14 @@ body {
         const totalMs = calcTotalMs();
         const totalFrames = Math.ceil(totalMs / frameDelay);
 
+        // 📐 サイズを固定値で確定（前回のRangeError対策）
+        //   全フレームを必ず同じwidth×heightで取得しないと
+        //   UPNG.encodeで「Invalid typed array length」が出る
+        const FIXED_WIDTH  = width;
+        const FIXED_HEIGHT = height;
+        const STAGE_REAL_WIDTH  = Math.ceil(stageEl.getBoundingClientRect().width);
+        const STAGE_REAL_HEIGHT = Math.ceil(stageEl.getBoundingClientRect().height);
+
         const frames = [];
         const delays = [];
         const animationPromise = play();
@@ -1914,15 +1929,26 @@ body {
         progressText.value = 'アニメを録画中...';
         for (let t = 0; t < totalMs; t += frameDelay) {
           try {
-            const canvas = await html2canvas(stageEl, {
-              backgroundColor: null,
-              scale,
-              logging: false,
-              width: stageEl.getBoundingClientRect().width,
-              height: stageEl.getBoundingClientRect().height
+            // 📸 DOM→Canvas（html-to-image版・座標計算なし、taintedされない）
+            //   width/height/canvasWidth/canvasHeight 全部指定でサイズ揺らぎ防止
+            const canvas = await htmlToImage.toCanvas(stageEl, {
+              backgroundColor: '#F5F2E4',
+              pixelRatio: scale,
+              width:  STAGE_REAL_WIDTH,
+              height: STAGE_REAL_HEIGHT,
+              canvasWidth:  FIXED_WIDTH,
+              canvasHeight: FIXED_HEIGHT
             });
+
+            // 🛡 安全策：サイズが想定と違ったらスキップ（フレーム揺らぎ防止）
+            if (canvas.width !== FIXED_WIDTH || canvas.height !== FIXED_HEIGHT) {
+              console.warn(`サイズ不一致でスキップ: ${canvas.width}×${canvas.height} (期待 ${FIXED_WIDTH}×${FIXED_HEIGHT})`);
+              await wait(frameDelay);
+              continue;
+            }
+
             const ctx = canvas.getContext('2d');
-            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const imgData = ctx.getImageData(0, 0, FIXED_WIDTH, FIXED_HEIGHT);
             frames.push(imgData.data.buffer);
             delays.push(frameDelay);
 
@@ -1938,11 +1964,18 @@ body {
 
         await animationPromise;
 
+        if (frames.length === 0) {
+          throw new Error('フレームが1つも取得できませんでした');
+        }
+
         progressText.value = 'APNGを書き出し中...';
         progressRatio.value = 0.7;
         await wait(50);
 
-        const apngBuffer = UPNG.encode(frames, width, height, 0, delays);
+        // 🌈 APNG生成（UPNG.encode は内部で pako を使う）
+        //   引数: (buffers, width, height, cnum, dels)
+        //   cnum: 0 = フルカラー、256 = 256色パレット
+        const apngBuffer = UPNG.encode(frames, FIXED_WIDTH, FIXED_HEIGHT, 0, delays);
         progressRatio.value = 1.0;
         return new Blob([apngBuffer], { type: 'image/png' });
       }
@@ -1955,54 +1988,7 @@ body {
     // =====================================================
       // 📏 録画ビューのサイズが画面に収まるかチェック
       //   収まらないと録画時に切れる可能性がある
-      function checkRecordingSize() {
-        const viewport = document.querySelector('.recording-viewport');
-        if (!viewport) return { ok: true };  // 録画ビュー未表示なら判定不可
-
-        const stage = viewport.querySelector('.stage');
-        if (!stage) return { ok: true };
-
-        // 録画ビューの padding(8px) も含めた必要サイズ
-        const padding = 8 * 2; // 上下or左右合計
-        const stageRect = stage.getBoundingClientRect();
-        const neededWidth  = Math.ceil(stageRect.width  + padding);
-        const neededHeight = Math.ceil(stageRect.height + padding);
-
-        // ブラウザの表示領域
-        const browserWidth  = window.innerWidth;
-        const browserHeight = window.innerHeight;
-
-        const widthOver  = neededWidth  > browserWidth;
-        const heightOver = neededHeight > browserHeight;
-
-        if (!widthOver && !heightOver) {
-          return { ok: true };
-        }
-
-        // 警告メッセージ組み立て
-        const lines = ['⚠️ 動画が切れる可能性があります', ''];
-        if (heightOver) {
-          lines.push(`縦：必要 ${neededHeight}px ／ ブラウザ ${browserHeight}px`);
-        }
-        if (widthOver) {
-          lines.push(`横：必要 ${neededWidth}px ／ ブラウザ ${browserWidth}px`);
-        }
-        lines.push('');
-        lines.push('対処法：');
-        lines.push('・ブラウザウィンドウを大きくする');
-        lines.push('・メッセージを減らす／短くする');
-        if (widthOver) {
-          lines.push('・出力サイズを小さくする（800→640→480）');
-        }
-        lines.push('');
-        lines.push('このまま続行しますか？');
-
-        return {
-          ok: false,
-          message: lines.join('\n')
-        };
-      }
-
+    
       async function downloadWebm() {
         showDownloadMenu.value = false;
 
@@ -2038,31 +2024,7 @@ body {
           msg.currentEmotion = '';
         });
 
-        // 全メッセージ最終状態にしてサイズ計算用にDOMを伸ばす
-        // （実測のためいったん全部表示状態にする）
-        const tempDisplayTexts = scenario.value.map(m => m.text);
-        scenario.value.forEach((msg, i) => {
-          msg.displayText = tempDisplayTexts[i];
-        });
-        visibleCount.value = scenario.value.length;
-        await wait(200); // DOM更新待ち
-
-        // 📏 サイズチェック：録画ビューが画面に収まるか
-        const sizeCheck = checkRecordingSize();
-        if (!sizeCheck.ok) {
-          if (!confirm(sizeCheck.message)) {
-            // ユーザーがキャンセル → リセットして終了
-            visibleCount.value = 0;
-            scenario.value.forEach(msg => { msg.displayText = ''; });
-            isRecording.value = false;
-            return;
-          }
-        }
-
-        // チェック後、再度リセット（実際の再生は0からスタート）
-        visibleCount.value = 0;
-        scenario.value.forEach(msg => { msg.displayText = ''; });
-        await wait(100);
+        await wait(200); // DOM更新待ち（録画ビューが描画される）
 
         try {
           // ② 画面共有ストリーム取得
