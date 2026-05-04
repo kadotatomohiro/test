@@ -1829,9 +1829,16 @@
               // 📸 DOM→Canvas（html-to-image版・taintedされない）
               const canvas = await htmlToImage.toCanvas(stageEl, {
                 backgroundColor: '#F5F2E4',
-                pixelRatio: scale,
-                width: stageEl.getBoundingClientRect().width,
-                height: stageEl.getBoundingClientRect().height
+                pixelRatio: 1,
+                width: width,
+                height: height,
+                style: {
+                  transform: `scale(${scale})`,
+                  transformOrigin: 'top left',
+                  width: stageEl.offsetWidth + 'px',
+                  height: stageEl.offsetHeight + 'px',
+                  margin: '0'
+                }
               });
               gif.addFrame(canvas, { delay: frameDelay, copy: true });
 
@@ -1911,8 +1918,8 @@
           //   UPNG.encodeで「Invalid typed array length」が出る
           const FIXED_WIDTH = width;
           const FIXED_HEIGHT = height;
-          const STAGE_REAL_WIDTH = Math.ceil(stageEl.getBoundingClientRect().width);
-          const STAGE_REAL_HEIGHT = Math.ceil(stageEl.getBoundingClientRect().height);
+          const STAGE_REAL_WIDTH = stageEl.offsetWidth;
+          const STAGE_REAL_HEIGHT = stageEl.offsetHeight;
 
           const frames = [];
           const delays = [];
@@ -1925,11 +1932,16 @@
               //   width/height/canvasWidth/canvasHeight 全部指定でサイズ揺らぎ防止
               const canvas = await htmlToImage.toCanvas(stageEl, {
                 backgroundColor: '#F5F2E4',
-                pixelRatio: scale,
-                width: STAGE_REAL_WIDTH,
-                height: STAGE_REAL_HEIGHT,
-                canvasWidth: FIXED_WIDTH,
-                canvasHeight: FIXED_HEIGHT
+                pixelRatio: 1,
+                width: FIXED_WIDTH,
+                height: FIXED_HEIGHT,
+                style: {
+                  transform: `scale(${scale})`,
+                  transformOrigin: 'top left',
+                  width: STAGE_REAL_WIDTH + 'px',
+                  height: STAGE_REAL_HEIGHT + 'px',
+                  margin: '0'
+                }
               });
 
               // 🛡 安全策：サイズが想定と違ったらスキップ（フレーム揺らぎ防止）
