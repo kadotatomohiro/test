@@ -1807,6 +1807,12 @@
 
         async function generateGif() {
           const frameDelay = Math.round(1000 / fps.value);
+
+          // 📏 下が切れる問題の対策：録画前にすべて表示して「最大の高さ」を測る
+          visibleCount.value = scenario.value.length;
+          scenario.value.forEach(msg => msg.displayText = msg.text);
+          await wait(100); // Vueが画面を広げるのを待つ
+
           const { stageEl, width, height, scale } = getStageSize();
           const totalMs = calcTotalMs();
           const totalFrames = Math.ceil(totalMs / frameDelay);
@@ -1909,6 +1915,12 @@
 
         async function generateApng() {
           const frameDelay = Math.round(1000 / fps.value);
+
+          // 📏 下が切れる問題の対策：録画前にすべて表示して「最大の高さ」を測る
+          visibleCount.value = scenario.value.length;
+          scenario.value.forEach(msg => msg.displayText = msg.text);
+          await wait(100); // Vueが画面を広げるのを待つ
+
           const { stageEl, width, height, scale } = getStageSize();
           const totalMs = calcTotalMs();
           const totalFrames = Math.ceil(totalMs / frameDelay);
